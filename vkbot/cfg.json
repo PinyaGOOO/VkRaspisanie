@@ -1,0 +1,41 @@
+{
+    "vk" : {
+        "requestdelay" : 60,
+        "userAgent" : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 YaBrowser/24.1.0.0 Safari/537.36",
+        "validuserids" : {
+            "6222960" : true,
+            "51251854" : true
+        },
+        "schedule" : {
+            "url" : "https://vk.com/topic-1014995_53647274"
+        },
+
+        "token"   : "vk1.a.M7hS6fY68uA70V_2xkcg9TYNfsFhXkmzguWOncPG-DCyN8_p9Uc2rXBmyUOJfjWVBg4e3bKTNI4tZTzMddalEs1LFSZrdSVr7cfV6y65kHKsHMFQx_WlSCDPuUeZzIojtNK8OumorYmrn8700kXuaY0oSsHHzd_KFum0fpgqGG24WKVwkTqWesjARUPsb4eR-seDmB-R-Dt57DJ0fELztA",
+        "groupId" : 236188144,
+
+        "admins" : {
+            "873470452" : true,
+			"249760730" : true,
+            "532537229" : true
+        },
+        "emoji" : {
+            "groups"        : "🎓",
+            "people"        : "💼",
+            "automatization": "⚙️",
+            "subs"          : "📫",
+            "getsubs"       : "📩",
+            "close"         : "❌"
+        }
+    },
+    "excel" : {
+        "emptyellstyle" : {
+            "value": "",
+            "fill": {
+                "type": "pattern",
+                "pattern": "solid",
+                "fgColor": { "argb": "FFFFFFFF" },
+                "bgColor": { "argb": "FF000000" }
+            }
+        }
+    }
+}
