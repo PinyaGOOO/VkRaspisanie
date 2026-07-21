@@ -1,5 +1,5 @@
 const { vk } = require("../../cfg.json")
-const { buildKeyboard } = require("../vkapi.js")
+const { buildKeyboard } = require("../helpers/buttonFormater.js")
 const settings = require("../../settings.js")
 
 module.exports = {
@@ -7,20 +7,25 @@ module.exports = {
         const userid = ctx.userId
         if (!vk.admins || !vk.admins[userid]) return
 
-        const buttons = []
-        buttons.push([{ text: 'Очистить Изображения/Таблицы', callback_data: 'func:tempclean' }])
-        buttons.push([{ text: 'Удалить идентификатор расписания', callback_data: 'func:removehash' }])
-
         const mode = settings.get("deliverymode", "all")
-        buttons.push([{ text: 'Авторассылка: ' + mode, callback_data: 'func:deliverymode' }])
+
+        const rows = [
+            [{ action: { type: "text", label: "🗑 Очистить Изображения/Таблицы", payload: JSON.stringify({ cmd: "func", arg: "tempclean" }) }, color: "negative" }],
+            [{ action: { type: "text", label: "🔑 Удалить идентификатор расписания", payload: JSON.stringify({ cmd: "func", arg: "removehash" }) }, color: "negative" }],
+            [{ action: { type: "text", label: "📬 Авторассылка: " + mode, payload: JSON.stringify({ cmd: "func", arg: "deliverymode" }) }, color: "secondary" }],
+        ]
 
         if (mode !== "off") {
-            buttons.push([{ text: 'Запустить Авторассылку', callback_data: 'func:rundelivery' }])
+            rows.push([{ action: { type: "text", label: "🚀 Запустить Авторассылку", payload: JSON.stringify({ cmd: "func", arg: "rundelivery" }) }, color: "primary" }])
         }
 
-        buttons.push([{ text: 'Очистить тасклист', callback_data: 'func:cleantasks' }])
-        buttons.push([{ text: 'Назад', callback_data: 'redirect:start' }])
+        rows.push([{ action: { type: "text", label: "🧹 Очистить тасклист", payload: JSON.stringify({ cmd: "func", arg: "cleantasks" }) }, color: "secondary" }])
+        rows.push([{ action: { type: "text", label: "< Назад", payload: JSON.stringify({ cmd: "redirect", arg: "start" }) }, color: "secondary" }])
 
-        await ctx.reply("Удаление идентефикатора расписания скачает его заного и очистит изображения/таблицы (не запустит авторассылки)\nОтчиска тасклиста полностью очистит тасклист", buildKeyboard(buttons))
+        await ctx.reply(
+            "Удаление идентификатора расписания скачает его заново и очистит изображения/таблицы.\nОчистка тасклиста полностью очистит очередь задач.",
+            null,
+            buildKeyboard(rows)
+        )
     },
 }

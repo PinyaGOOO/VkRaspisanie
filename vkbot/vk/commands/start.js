@@ -1,5 +1,5 @@
 const storage = require("../../helpers/globaldata.js")
-const { buildKeyboard } = require("../vkapi.js")
+const { buildKeyboard } = require("../helpers/buttonFormater.js")
 const { vk } = require("../../cfg.json")
 
 module.exports = {
@@ -8,27 +8,26 @@ module.exports = {
         const userid = ctx.userId
         const isAdmin = vk.admins && vk.admins[userid]
 
-        const buttons = [
+        const rows = [
             [
-                { text: `${vk.emoji.groups} Группы`, callback_data: 'redirect:groups' },
-                { text: `${vk.emoji.people} Преподаватели`, callback_data: 'redirect:peoples' },
+                { action: { type: "text", label: `${vk.emoji.groups} Группы`, payload: JSON.stringify({ cmd: "redirect", arg: "groups" }) }, color: "primary" },
+                { action: { type: "text", label: `${vk.emoji.people} Преподаватели`, payload: JSON.stringify({ cmd: "redirect", arg: "peoples" }) }, color: "primary" },
             ],
             [
-                { text: `${vk.emoji.getsubs} Запросить мои подписки`, callback_data: 'func:getsubscribes' },
-                { text: `${vk.emoji.subs} Подписки`, callback_data: 'redirect:automatization' },
+                { action: { type: "text", label: `📅 График консультаций`, payload: JSON.stringify({ cmd: "redirect", arg: "consultations" }) }, color: "primary" },
+            ],
+            [
+                { action: { type: "text", label: `${vk.emoji.getsubs} Мои подписки`, payload: JSON.stringify({ cmd: "func", arg: "getsubscribes" }) }, color: "secondary" },
+                { action: { type: "text", label: `${vk.emoji.subs} Подписки`, payload: JSON.stringify({ cmd: "redirect", arg: "automatization" }) }, color: "secondary" },
             ],
         ]
 
-        const endrow = [
-            { text: `${vk.emoji.close} Закрыть`, callback_data: 'func:closemenu' },
-        ]
         if (isAdmin) {
-            endrow.push({ text: '⚠️ Admin', callback_data: 'func:adminmenu' })
+            rows.push([{ action: { type: "text", label: "⚠️ Admin", payload: JSON.stringify({ cmd: "func", arg: "adminmenu" }) }, color: "negative" }])
         }
-        buttons.push(endrow)
 
         const text = `Добро пожаловать в генератор расписания.\n\n${storage.get("vk_comment") || ""}\n\nОбновлено:\n${storage.get("vk_lastupdate") || "—"}\nСсылка на расписание: ${storage.get("vk_url") || "—"}`
 
-        await ctx.reply(text, buildKeyboard(buttons))
+        await ctx.reply(text, null, buildKeyboard(rows))
     }
 }

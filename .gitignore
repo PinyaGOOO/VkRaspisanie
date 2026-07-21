@@ -1,0 +1,16 @@
+# зависимости — ставятся через `npm install`, в git не нужны
+node_modules/
+
+# логи
+*.log
+
+# генерируется при запуске (скачивается/рисуется само)
+vkbot/files/schedule.xlsx
+vkbot/files/temp/
+
+# python-кэш
+**/__pycache__/
+
+# служебное ОС
+.DS_Store
+Thumbs.db

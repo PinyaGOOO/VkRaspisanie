@@ -18,6 +18,27 @@ const addressToNumber = adresformater.addressToNumber
 const addToStringAddress = adresformater.addToStringAddress
 const SheetName = 'Очное';
 const SheetName_rooms = 'кабинеты';
+
+// Находит лист по ключевым словам в названии (без учёта регистра/пробелов).
+// keywords — приоритетный список; fallbackIndex — если ничего не совпало (или null);
+// exclude — лист, который нельзя выбирать (напр. уже найденный основной).
+function resolveSheet(workbook, keywords, fallbackIndex, exclude) {
+    const sheets = (workbook.worksheets || []).filter(ws => ws && ws !== exclude)
+    const norm = s => (s || "").toString().trim().toLowerCase()
+    for (const kw of keywords) {
+        const s = sheets.find(ws => norm(ws.name) === kw)
+        if (s) return s
+    }
+    for (const kw of keywords) {
+        const s = sheets.find(ws => norm(ws.name).includes(kw))
+        if (s) return s
+    }
+    if (fallbackIndex !== null && fallbackIndex !== undefined && sheets[fallbackIndex]) {
+        return sheets[fallbackIndex]
+    }
+    return null
+}
+
 module.exports.run = async ()=>{
     return new Promise((resolve, reject) => {
         storage.init("groups_cache")
@@ -34,6 +55,25 @@ module.exports.run = async ()=>{
         mainWorkBook.xlsx.readFile("./files/schedule.xlsx").then(async (data)=>{
             console.log("Основная таблица загружена")
             var startgenerator = new Date().getTime() / 1000;
+
+            // Человеческий фактор: лист могли назвать иначе ("Очное " с пробелом,
+            // "очная форма", "Расписание"…). Находим листы по смыслу и приводим
+            // имена к ожидаемым, чтобы вся дальнейшая логика не легла.
+            const scheduleSheet = resolveSheet(mainWorkBook, ["очное", "очная", "расписание"], 0)
+            if (!scheduleSheet) { throw new Error("В таблице нет ни одного листа — генерация невозможна") }
+            if (scheduleSheet.name !== SheetName) {
+                console.log(`[exceleditor] лист расписания «${scheduleSheet.name}» → «${SheetName}»`)
+                scheduleSheet.name = SheetName
+            }
+            const roomsSheet = resolveSheet(mainWorkBook, ["кабинет", "каб"], null, scheduleSheet)
+            const hasRoomsSheet = !!roomsSheet
+            if (hasRoomsSheet && roomsSheet.name !== SheetName_rooms) {
+                console.log(`[exceleditor] лист кабинетов «${roomsSheet.name}» → «${SheetName_rooms}»`)
+                roomsSheet.name = SheetName_rooms
+            }
+            if (!hasRoomsSheet) {
+                console.warn("[exceleditor] лист с кабинетами не найден — раздел «свободные кабинеты» пропущен")
+            }
         
             const schedule = new excelParser(mainWorkBook,SheetName)
             const sourceSheet = schedule.getSourceSheet()
@@ -482,6 +522,7 @@ module.exports.run = async ()=>{
             storage.sort("rooms")
             storage.clean("rooms_cache")
 
+            if (hasRoomsSheet) try {
             const empty_rooms = new excelParser(mainWorkBook,SheetName_rooms)
             const empty_rooms_sheet = empty_rooms.getSourceSheet()
             const rooms_lastRow = empty_rooms_sheet.lastRow.number;
@@ -574,6 +615,7 @@ module.exports.run = async ()=>{
                 emptyroomshtml = emptyroomshtml.replace("{{BODY}}",body)
                 await html2image(emptyroomshtml,__dirname+"/../files/temp/emptyrooms/"+day+".jpeg")
             }
+            } catch (e) { console.error("[exceleditor] раздел «свободные кабинеты» пропущен:", e?.message || e) }
 
 
 
@@ -584,6 +626,12 @@ module.exports.run = async ()=>{
             //schedule.copyRange2Address(["A7","C12"],["A1"])
             //schedule.copyRange2Address(["A7","C12"],["D1"])
             //await schedule.saveExcel("./files/temp/test.xlsx")
+        }).catch((e) => {
+            // Любая ошибка чтения/генерации: не вешаем промис (иначе бот не стартует),
+            // снимаем блокировку и отдаём reject — index.js поднимет бота на старых данных.
+            console.error("[exceleditor] ошибка генерации таблицы:", e?.message || e)
+            storage.set("telegram_stop", false)
+            reject(e)
         })
     })
 }

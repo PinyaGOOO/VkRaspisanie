@@ -31,28 +31,45 @@ class queue {
     async #worker() {
         if (this.#count() > 0) {
             const task = this.#get()
-            clearTimeout(this.timers["skiptaskifbug"])
-            this.timers["skiptaskifbug"] = setTimeout(() => {
+
+            // Переход к следующей задаче должен произойти РОВНО один раз:
+            // либо задача завершилась (успешно/с ошибкой), либо сработал таймаут.
+            // Иначе два «worker»-а начинают крутить очередь параллельно и
+            // ломают однопоточную генерацию (общий Puppeteer page).
+            let advanced = false
+            let skipTimer = null
+            const advance = () => {
+                if (advanced) return
+                advanced = true
+                clearTimeout(skipTimer)
                 this.#worker()
+            }
+
+            skipTimer = setTimeout(() => {
                 console.log("skipped bad task")
                 if (task.ctx) {
-                    task.ctx.reply("Не удалось обработать ваш запрос.")
+                    try { task.ctx.reply("Не удалось обработать ваш запрос.") } catch (e) {}
                 }
-            }, 30000)
+                advance()
+            }, 120000)
 
-            await task.func()
-            if (task.userid) {
-                if (this.userHasBan(task.userid)) {
-                    clearTimeout(this.timers[task.userid])
-                    if (task.addbantime) {
-                        this.timers[task.userid] = setTimeout(() => { this.userUnBan(task.userid) }, task.addbantime * 1000)
-                    } else {
-                        this.userUnBan(task.userid)
-                    }
+            // Без try/catch отклонённый промис задачи убивал всю очередь.
+            try {
+                await task.func()
+            } catch (e) {
+                console.error("[queue] Ошибка задачи:", e?.message || e)
+            }
+
+            if (task.userid && this.userHasBan(task.userid)) {
+                clearTimeout(this.timers[task.userid])
+                if (task.addbantime) {
+                    this.timers[task.userid] = setTimeout(() => { this.userUnBan(task.userid) }, task.addbantime * 1000)
+                } else {
+                    this.userUnBan(task.userid)
                 }
             }
-            clearTimeout(this.timers["skiptaskifbug"])
-            this.#worker()
+
+            advance()
         } else {
             this.idle = true
         }

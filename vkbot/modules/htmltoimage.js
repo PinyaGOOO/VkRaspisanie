@@ -1,9 +1,8 @@
-
 const fs = require('fs');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 
 var browser
-var page 
+var page
 
 const minimal_args = [
   '--autoplay-policy=user-gesture-required',
@@ -42,27 +41,32 @@ const minimal_args = [
   '--use-gl=swiftshader',
   '--use-mock-keychain',
 ];
-var htmlToImage
-async function htmlToImage(html, outputPath,norecurseve) {
+
+async function htmlToImage(html, outputPath) {
   try {
     if (!browser) {
-      browser = await puppeteer.launch({ headless: "new", args: minimal_args });
+      browser = await puppeteer.launch({
+        headless: "new",
+        args: minimal_args,
+        executablePath: '/usr/bin/chromium-browser'
+      });
+      page = null
     }
     if (!page) {
       page = await browser.newPage();
     }
-    console.log("Генерируем изображение... ",outputPath)
+    console.log("Генерируем изображение... ", outputPath)
     const dataUrl = `data:text/html,${encodeURIComponent(html)}`;
     await page.goto(dataUrl);
     await page.screenshot({ path: outputPath, fullPage: true });
     console.log("Изображение сгенерированно!")
-
-
   } catch (error) {
     console.log("Ошибка внутри генератора изображений");
     console.error(error);
-    await browser.close()
+    try { await browser.close() } catch(e) {}
+    browser = null
+    page = null
   }
 }
+
 module.exports = htmlToImage
-  

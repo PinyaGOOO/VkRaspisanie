@@ -1,40 +1,30 @@
 const storage = require("../../helpers/globaldata.js")
-const { buildKeyboard } = require("../vkapi.js")
+const { generatePagedButtons, buildKeyboard } = require("../helpers/buttonFormater.js")
 const db = require("../../database/db.js")
 
-function generateInlineKeyboardButtons(dataway, values, colums = 4, currsub) {
-    const result = []
-    const rows = Math.ceil(values.length / colums)
-    for (let i = 0; i < rows; i++) {
-        const rowButtons = []
-        for (let j = 0; j < colums; j++) {
-            const index = i * colums + j
-            if (index < values.length) {
-                rowButtons.push({
-                    text: (currsub === values[index] ? "⭐ " : "") + values[index],
-                    callback_data: dataway + ":" + values[index]
-                })
-            }
-        }
-        result.push(rowButtons)
-    }
-    return result
-}
-
 module.exports = {
-    func: async (ctx, cmd, arg) => {
+    func: async (ctx, cmd, data) => {
         const userid = ctx.userId
-        let subs = await db.getUserSubScribes(userid)
-        subs = JSON.parse(subs.subscribes)
+        const category = data && data.category ? data.category : data
+        const page = (data && data.page !== undefined) ? data.page : 0
 
-        const data = storage.get(arg)
-        const buttons = generateInlineKeyboardButtons("func:setautomatization:" + arg, data, 3, subs[arg])
+        await db.createUser(userid)
+        let subsRow = await db.getUserSubScribes(userid)
+        let subs = JSON.parse(subsRow?.subscribes ?? '{}')
 
-        if (subs[arg]) {
-            buttons.push([{ text: '⛔ Отменить подписку', callback_data: 'func:setautomatization:unsub:' + arg }])
+        const values = storage.get(category) || []
+        const currSub = subs[category]
+
+        // Помечаем активную подписку «✅», но в payload кнопки кладём чистое
+        // значение (иначе подписка сохранилась бы как «✅ Имя» и не находилась).
+        const markedValues = values.map(v => (currSub === v ? { label: "✅ " + v, value: v } : v))
+        const rows = generatePagedButtons("setautomatization_" + category, markedValues, 3, page, "automatization")
+
+        if (currSub) {
+            rows.push([{ action: { type: "text", label: "🔕 Отменить подписку", payload: JSON.stringify({ cmd: "func", arg: "setautomatization", data: { type: "unsub", category } }) }, color: "negative" }])
         }
-        buttons.push([{ text: 'Назад', callback_data: 'redirect:automatization' }])
+        rows.push([{ action: { type: "text", label: "< Назад", payload: JSON.stringify({ cmd: "redirect", arg: "automatization" }) }, color: "secondary" }])
 
-        await ctx.reply("Выберите подписку", buildKeyboard(buttons))
+        await ctx.reply("Выберите подписку:", null, buildKeyboard(rows))
     },
 }

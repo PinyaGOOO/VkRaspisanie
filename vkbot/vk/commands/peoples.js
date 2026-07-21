@@ -1,13 +1,14 @@
 const storage = require("../../helpers/globaldata.js")
-const { buildKeyboard } = require("../vkapi.js")
-const { generateInlineKeyboardButtons } = require("../helpers/buttonFormater.js")
+const { generatePagedButtons, buildKeyboard } = require("../helpers/buttonFormater.js")
 
 module.exports = {
-    desc: "Получить список Преподавателей",
-    callback: async (ctx) => {
-        const buttons = generateInlineKeyboardButtons("peoples", storage.get("people"), 2)
-        buttons.push([{ text: '🚪 Кабинеты', callback_data: 'redirect:rooms' }])
-        buttons.push([{ text: 'Назад', callback_data: 'redirect:start' }])
-        await ctx.reply("Выберите Преподавателя", buildKeyboard(buttons))
-    },
+    desc: "Список преподавателей",
+    callback: async (ctx, page = 0) => {
+        const rows = generatePagedButtons("peoples", storage.get("people"), 2, page, "start")
+        rows.push([
+            { action: { type: "text", label: "🚪 Кабинеты", payload: JSON.stringify({ cmd: "redirect", arg: "rooms" }) }, color: "secondary" },
+            { action: { type: "text", label: "< Назад", payload: JSON.stringify({ cmd: "redirect", arg: "start" }) }, color: "secondary" },
+        ])
+        await ctx.reply("Выберите преподавателя:", null, buildKeyboard(rows))
+    }
 }

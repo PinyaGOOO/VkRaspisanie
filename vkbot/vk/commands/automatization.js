@@ -1,5 +1,5 @@
 const { vk } = require("../../cfg.json")
-const { buildKeyboard } = require("../vkapi.js")
+const { buildKeyboard } = require("../helpers/buttonFormater.js")
 const db = require("../../database/db.js")
 
 module.exports = {
@@ -13,12 +13,12 @@ module.exports = {
             subscribes = JSON.parse(user.subscribes)
         }
 
-        const buttons = [
-            [{ text: `${vk.emoji.groups} Группы${subscribes.groups ? " | " + subscribes.groups : ""}`, callback_data: 'func:automatization:groups' }],
-            [{ text: `${vk.emoji.people} Преподаватели${subscribes.people ? " | " + subscribes.people : ""}`, callback_data: 'func:automatization:people' }],
-            [{ text: 'Назад', callback_data: 'redirect:start' }],
+        const rows = [
+            [{ action: { type: "text", label: `${vk.emoji.groups} Группы${subscribes.groups ? " | " + subscribes.groups : ""}`, payload: JSON.stringify({ cmd: "func", arg: "automatization", data: { category: "groups" } }) }, color: "secondary" }],
+            [{ action: { type: "text", label: `${vk.emoji.people} Преподаватели${subscribes.people ? " | " + subscribes.people : ""}`, payload: JSON.stringify({ cmd: "func", arg: "automatization", data: { category: "people" } }) }, color: "secondary" }],
+            [{ action: { type: "text", label: "< Назад", payload: JSON.stringify({ cmd: "redirect", arg: "start" }) }, color: "secondary" }],
         ]
 
-        await ctx.reply("Подписка позволит получать расписание при его обновлении/изменении.\n\n⚠️Вы можете подписаться только на 1 группу и на 1 преподавателя.", buildKeyboard(buttons))
-    },
+        await ctx.reply("Подписка позволит получать расписание при его обновлении/изменении.\n\n⚠️ Бот отправит расписание только при изменении.", null, buildKeyboard(rows))
+    }
 }
