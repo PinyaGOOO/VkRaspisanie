@@ -100,12 +100,25 @@ class VkBot {
             }
         }
         if (pending.length > 0) {
-            const server = await this.api("photos.getMessagesUploadServer", {})
-            await Promise.all(pending.map(async ({ i, fp, mtimeMs }) => {
-                const attach = await this._uploadToServer(fp, server.upload_url)
+            let server = await this.api("photos.getMessagesUploadServer", {})
+            // Последовательно: параллельная загрузка нескольких фото на один
+            // upload-сервер иногда возвращает "photo":"" (VK не успевает обработать).
+            // Плюс один ретрай со свежим сервером на случай пустого ответа/сбоя.
+            for (const { i, fp, mtimeMs } of pending) {
+                let attach = null
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        attach = await this._uploadToServer(fp, server.upload_url)
+                        break
+                    } catch (e) {
+                        if (attempt === 1) throw e
+                        await new Promise(r => setTimeout(r, 500))
+                        server = await this.api("photos.getMessagesUploadServer", {})
+                    }
+                }
                 this._photoCache.set(fp, { mtimeMs, attach })
                 results[i] = attach
-            }))
+            }
         }
         return results
     }
