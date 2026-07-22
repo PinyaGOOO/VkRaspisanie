@@ -9,12 +9,12 @@ module.exports.numberToAddress = (row, column) => {
 }
 
 module.exports.addressToNumber = (index) => {
-  var match = index.match(/([A-Z]+)(\d+)/);
+  var match = ("" + index).match(/([A-Z]+)(\d+)/);
   if (!match) {
-   // throw new Error('Invalid Excel index format');
-   index="A"+index
-   match = index.match(/([A-Z]+)(\d+)/);
+   index = "A" + index
+   match = ("" + index).match(/([A-Z]+)(\d+)/);
   }
+  if (!match) throw new Error(`addressToNumber: не удалось разобрать адрес "${index}"`)
   const [, letters, number] = match;
   const column = letters.split('').reduce((acc, letter) => acc * 26 + (letter.charCodeAt(0) - 'A'.charCodeAt(0) + 1), 0);
   const row = parseInt(number, 10);

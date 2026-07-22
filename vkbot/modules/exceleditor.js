@@ -97,6 +97,7 @@ module.exports.run = async ()=>{
             cource_range.shift() // первая итерация говной
             //console.log(cource_range)
             for (let index = 0; index < cource_range.length; index++) {
+            try {
                 const range = cource_range[index]
                 if(range.start != range.end){
                     
@@ -187,6 +188,7 @@ module.exports.run = async ()=>{
                        fs.writeFileSync("./files/temp/cources/"+(index+1) + "_" +(r_index+1)+".html",html)
                     }
                 }
+            } catch (e) { console.error(`[exceleditor] пропущен курс ${index+1}:`, e?.message || e) }
             }
 
           //  fs.writeFileSync("./files/temp/cources/5.html",`
@@ -276,7 +278,10 @@ module.exports.run = async ()=>{
 
 
             const peopleranges = {}
-            await schedule.scanRange(["A7",downrightboxpoint],async (row,col)=>{
+            // Сканируем ФИО преподавателей начиная с ТЕЛА расписания (стр. 10), а не с
+            // шапки: строка 8 «Классный руководитель» может содержать короткие ФИО
+            // («Попов С.А.»), которые иначе ловятся как пара и ломают расчёт адреса.
+            await schedule.scanRange(["A10",downrightboxpoint],async (row,col)=>{
                 if(col.master == col && col.value){
                     var value = ""+col.value
                     const name = value.match(/^([А-яЁё]+\s\W\.\W\.$)/i);
@@ -298,6 +303,7 @@ module.exports.run = async ()=>{
 
 
             for (const name in peopleranges) {
+            try {
                 const savepath = "./files/temp/people/"+ name
                 var prev_item_address = 0
                 var ceil_offset = 0
@@ -392,6 +398,7 @@ module.exports.run = async ()=>{
                 await peoplemakettable.createExcel()
                 await peoplemakettable.copyRange2Address([range1,range2])
                 await peoplemakettable.saveExcel(savepath+"/3.xlsx")
+            } catch (e) { console.error(`[exceleditor] пропущен преподаватель ${name}:`, e?.message || e) }
             }
 
             storage.clean("people_cache")
@@ -431,6 +438,7 @@ module.exports.run = async ()=>{
             })
             //console.log( storage.get("rooms") )
             for (var room in rooms_point) {
+            try {
                 room = room.replace("/"," ")
                 const savepath = "./files/temp/rooms/"+room
                 var roommaket = await schedule.createExcel()
@@ -518,6 +526,7 @@ module.exports.run = async ()=>{
                 await roommakettable.createExcel()
                 await roommakettable.copyRange2Address([range1,range2])
                 await roommakettable.saveExcel(savepath+"/3.xlsx")
+            } catch (e) { console.error(`[exceleditor] пропущен кабинет ${room}:`, e?.message || e) }
             }
             storage.sort("rooms")
             storage.clean("rooms_cache")

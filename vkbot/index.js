@@ -33,3 +33,16 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
     console.error('[unhandledRejection]', new Date().toISOString(), err?.message || err)
 })
+
+// Быстрый выход по сигналу от systemd (иначе puppeteer держит браузер и SIGTERM
+// «зависает» — systemd ждёт TimeoutStopSec и добивает SIGKILL, отсюда долгий restart).
+let shuttingDown = false
+const shutdown = (signal) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    console.log(`[shutdown] получен ${signal}, завершаемся`)
+    // даём немного времени флашнуть логи и выходим
+    setTimeout(() => process.exit(0), 200)
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
