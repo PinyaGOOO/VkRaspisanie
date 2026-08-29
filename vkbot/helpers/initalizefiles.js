@@ -3,14 +3,14 @@ const fs = require("fs")
 
 try{
 
-    if (!fs.existsSync("./files/settings.json")) {
-        fs.writeFileSync("./files/settings.json","{}") 
-        console.log("Initalize settings.json file...")
-    }
-
     if (!fs.existsSync("./files")){
         fs.mkdirSync("./files");
         console.log("Initalize file directory...")
+    }
+
+    if (!fs.existsSync("./files/settings.json")) {
+        fs.writeFileSync("./files/settings.json","{}")
+        console.log("Initalize settings.json file...")
     }
 
     if (!fs.existsSync("./files/temp")){

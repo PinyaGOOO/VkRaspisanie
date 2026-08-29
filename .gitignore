@@ -6,6 +6,8 @@ node_modules/
 
 # генерируется при запуске (скачивается/рисуется само)
 vkbot/files/schedule.xlsx
+vkbot/files/schedule.xlsx.tmp-*
+vkbot/files/settings.json.*.tmp
 vkbot/files/temp/
 
 # рабочая база подписчиков

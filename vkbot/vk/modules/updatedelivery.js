@@ -99,12 +99,12 @@ async function prepareUnique(uniqueItems, bot) {
 module.exports.start = async () => {
     if (running) {
         console.log("[delivery] рассылка уже идёт — повторный запуск пропущен")
-        return
+        return { completed: false, reason: "already-running" }
     }
     const mode = settings.get("deliverymode", "all")
     if (mode === "off") {
         console.log("[delivery] режим доставки: off — рассылка отключена")
-        return
+        return { completed: true, skipped: "off", sent: 0, failed: 0, total: 0 }
     }
 
     running = true
@@ -115,7 +115,9 @@ module.exports.start = async () => {
             users = users.filter(u => vk.admins && vk.admins[u.userid])
         }
         console.log(`[delivery] старт (режим=${mode}), подписчиков: ${users.length}`)
-        if (users.length === 0) return
+        if (users.length === 0) {
+            return { completed: true, sent: 0, failed: 0, total: 0 }
+        }
 
         // Разбираем подписки и собираем множество уникальных расписаний
         const parsedUsers = []
@@ -142,13 +144,20 @@ module.exports.start = async () => {
 
         const bot = storage.get("bot")
         if (!bot) {
-            console.error("[delivery] бот не инициализирован — рассылка отменена")
-            return
+            throw new Error("бот не инициализирован — рассылка отменена")
         }
 
         // Фаза 1 — подготовка картинок (последовательно, защищает Puppeteer)
         const { prepared, aborted } = await prepareUnique(uniqueItems, bot)
-        if (aborted) return
+        if (aborted) {
+            throw new Error("подготовка прервана новой генерацией расписания")
+        }
+        const preparedCount = Array.from(prepared.values()).filter(
+            item => item?.attachments?.length
+        ).length
+        if (uniqueItems.size > 0 && preparedCount === 0) {
+            throw new Error("не подготовлено ни одного вложения с расписанием")
+        }
 
         // Фаза 2 — рассылка (параллельно, с ограничением скорости; без Puppeteer)
         const summaryText = `Изменения в расписании\n\n${storage.get("vk_comment") || ""}\n\nОбновлено: ${storage.get("vk_lastupdate") || "—"}`
@@ -191,8 +200,10 @@ module.exports.start = async () => {
 
         const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
         console.log(`[delivery] завершено: доставлено ${sent}, не доставлено ${failed}, за ${secs}с`)
+        return { completed: true, sent, failed, total: parsedUsers.length }
     } catch (e) {
         console.error("[delivery] фатальная ошибка рассылки:", e?.message || e)
+        throw e
     } finally {
         running = false
     }

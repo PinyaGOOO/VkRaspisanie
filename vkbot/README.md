@@ -50,6 +50,18 @@ pip install -r modules/python/requirements.txt --break-system-packages
 }
 ```
 
+Источник расписания задаётся отдельно в `schedule-source.json`:
+
+```json
+{
+  "url": "https://vk.com/topic-1014995_67489504",
+  "boardUrl": "https://vk.com/board1014995"
+}
+```
+
+`boardUrl` используется для автоматического поиска темы текущего учебного года.
+Поле `url` остаётся резервным источником, если список обсуждений временно недоступен.
+
 ### Где взять токен и groupId
 
 1. Зайди в управление своим сообществом ВКонтакте
@@ -116,7 +128,8 @@ sudo systemctl status vkbot
 ```
 vkbot/
 ├── index.js                    <- Точка входа
-├── cfg.json                    <- Конфиг (токен, admins)
+├── cfg.json                    <- Конфиг VK (токен, admins)
+├── schedule-source.json        <- Источник и автообнаружение темы расписания
 ├── vk/
 │   ├── main.js                 <- Логика бота
 │   ├── vkapi.js                <- VK API + Long Poll
@@ -126,7 +139,7 @@ vkbot/
 │   ├── helpers/buttonFormater.js
 │   └── modules/updatedelivery.js
 ├── database/db.js              <- SQLite (без изменений)
-├── downloader/                 <- Скачивание расписания (без изменений)
+├── downloader/                 <- Поиск и скачивание расписания
 ├── modules/                    <- Excel парсинг/генерация (без изменений)
 └── helpers/                    <- Утилиты (без изменений)
 ```

@@ -5,26 +5,46 @@ const tempcleaner = require("./helpers/tempcleaner.js")
 const delivery = require("./vk/modules/updatedelivery.js")
 const db = require("./database/db.js")
 
-loader.run().then(async () => {
+const buildSchedule = async (scheduleData) => {
+    await loader.run(scheduleData)
+    await tempcleaner.run()
     await exceleditor.run()
-    const vkbot = require("./vk/main.js")
-    const tv = require("./tv/express.js")
-}).catch((err) => {
-    console.error("[index] Ошибка при запуске — не удалось загрузить расписание:", err?.message || err)
-    // Всё равно запускаем бота, просто без свежего расписания
-    const vkbot = require("./vk/main.js")
-    const tv = require("./tv/express.js")
-})
+}
 
-loader.idle(async () => {
-    loader.run().then(async () => {
-        await tempcleaner.run()
-        await exceleditor.run()
-        await delivery.start()
-    }).catch((err) => {
-        console.error("[index] Ошибка при обновлении расписания:", err?.message || err)
-    })
-})
+const processUpdate = async (scheduleData) => {
+    console.log(`[index] Обнаружено новое расписание: ${scheduleData.documentid || scheduleData.postid}`)
+    await buildSchedule(scheduleData)
+
+    const result = await delivery.start()
+    if (!result?.completed) {
+        throw new Error(`рассылка не завершена (${result?.reason || "неизвестная причина"})`)
+    }
+    if (result.total > 0 && result.sent === 0 && result.failed > 0) {
+        throw new Error("расписание не доставлено ни одному подписчику")
+    }
+}
+
+const startRuntime = () => {
+    require("./vk/main.js")
+    require("./tv/express.js")
+    loader.idle(processUpdate)
+}
+
+const boot = async () => {
+    try {
+        // На старте подготавливаем актуальные данные для запросов пользователей.
+        // Авторассылку запускает polling ниже, если сохранённый marker устарел.
+        await buildSchedule()
+    } catch (err) {
+        console.error("[index] Ошибка при запуске — не удалось подготовить расписание:", err?.message || err)
+    } finally {
+        // Polling начинается только после стартовой генерации, поэтому два процесса
+        // больше не удаляют files/temp друг у друга.
+        startRuntime()
+    }
+}
+
+boot()
 
 process.on('uncaughtException', (err) => {
     console.error('[uncaughtException]', new Date().toISOString(), err.message)

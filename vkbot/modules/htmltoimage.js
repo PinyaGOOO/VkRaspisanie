@@ -63,9 +63,10 @@ async function htmlToImage(html, outputPath) {
   } catch (error) {
     console.log("Ошибка внутри генератора изображений");
     console.error(error);
-    try { await browser.close() } catch(e) {}
+    try { if (browser) await browser.close() } catch(e) {}
     browser = null
     page = null
+    throw error
   }
 }
 
