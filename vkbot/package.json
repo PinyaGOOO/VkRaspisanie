@@ -17,7 +17,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test downloader/downloader.test.js settings.test.js"
+    "test": "node --test downloader/downloader.test.js settings.test.js vk/vkapi.test.js"
   },
   "author": "",
   "license": "ISC"

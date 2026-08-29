@@ -15,6 +15,12 @@ class VkBot {
         // filePath -> { mtimeMs, attach }. Одни и те же картинки расписания
         // запрашивают сотни пользователей — кэш убирает повторную загрузку в VK.
         this._photoCache = new Map()
+        // VK иногда возвращает успешный HTTP-ответ, но с пустым photo, если
+        // одновременно отправить несколько multipart-загрузок. Очередь общая
+        // для рассылки и пользовательских запросов, поэтому они не мешают друг другу.
+        this._photoUploadQueue = Promise.resolve()
+        this._photoUploadsInFlight = new Map()
+        this._photoUploadRetryDelays = [750, 1500, 3000]
     }
 
     on(event, handler) { this._handlers[event].push(handler) }
@@ -83,8 +89,39 @@ class VkBot {
         return `photo${saved[0].owner_id}_${saved[0].id}`
     }
 
+    _enqueuePhotoUpload(task) {
+        const result = this._photoUploadQueue.then(task, task)
+        this._photoUploadQueue = result.catch(() => {})
+        return result
+    }
+
+    async _uploadWithRetry(filePath) {
+        return await this._enqueuePhotoUpload(async () => {
+            let lastError = null
+            const delays = this._photoUploadRetryDelays
+
+            for (let attempt = 0; attempt <= delays.length; attempt++) {
+                try {
+                    // Свежий URL для каждой попытки: после пустого photo старый
+                    // upload-сервер VK повторно использовать ненадёжно.
+                    const server = await this.api("photos.getMessagesUploadServer", {})
+                    return await this._uploadToServer(filePath, server.upload_url)
+                } catch (error) {
+                    lastError = error
+                    if (attempt === delays.length) break
+                    console.warn(
+                        `[VkBot] загрузка фото не удалась (${attempt + 1}/${delays.length + 1}), повтор через ${delays[attempt]}мс: ${error.message}`
+                    )
+                    await new Promise(resolve => setTimeout(resolve, delays[attempt]))
+                }
+            }
+
+            throw lastError
+        })
+    }
+
     // Возвращает attachment-строки для файлов: из кэша (если файл не менялся)
-    // либо параллельно грузит недостающие через один общий upload-сервер.
+    // либо ставит недостающие в общую последовательную очередь загрузки.
     async _resolveAttachments(filePaths) {
         const results = new Array(filePaths.length)
         const pending = []
@@ -100,22 +137,15 @@ class VkBot {
             }
         }
         if (pending.length > 0) {
-            let server = await this.api("photos.getMessagesUploadServer", {})
-            // Последовательно: параллельная загрузка нескольких фото на один
-            // upload-сервер иногда возвращает "photo":"" (VK не успевает обработать).
-            // Плюс один ретрай со свежим сервером на случай пустого ответа/сбоя.
             for (const { i, fp, mtimeMs } of pending) {
-                let attach = null
-                for (let attempt = 0; attempt < 2; attempt++) {
-                    try {
-                        attach = await this._uploadToServer(fp, server.upload_url)
-                        break
-                    } catch (e) {
-                        if (attempt === 1) throw e
-                        await new Promise(r => setTimeout(r, 500))
-                        server = await this.api("photos.getMessagesUploadServer", {})
-                    }
+                const uploadKey = `${fp}:${mtimeMs}`
+                let upload = this._photoUploadsInFlight.get(uploadKey)
+                if (!upload) {
+                    upload = this._uploadWithRetry(fp)
+                    this._photoUploadsInFlight.set(uploadKey, upload)
+                    upload.finally(() => this._photoUploadsInFlight.delete(uploadKey)).catch(() => {})
                 }
+                const attach = await upload
                 this._photoCache.set(fp, { mtimeMs, attach })
                 results[i] = attach
             }
