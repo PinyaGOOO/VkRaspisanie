@@ -351,7 +351,7 @@ module.exports.run = async ()=>{
                                 var ceil_offset = index * 2
                                 pastepos.col = 3 + ceil_offset
                                 pastepos = numberToAddress(pastepos.row, pastepos.col)
-                                await schedule.copyRange2Address([item_address,room_address],[pastepos],{nomerge:true,unmerge:true})
+                                await schedule.copyLessonSlot2Address([item_address,room_address],pastepos)
                                 cell.master.alignment = oldalignment
                                 cell.master.value = oldval
                                 cell.alignment = oldalignment

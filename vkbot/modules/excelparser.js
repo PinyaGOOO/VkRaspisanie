@@ -157,6 +157,32 @@ class excelParser {
         }
     }
 
+    // Копирует стандартный двухстрочный блок занятия в расписание
+    // преподавателя. Шаблон берётся из первых колонок исходного расписания,
+    // где пустая пара иногда объединена целиком 2x2. Такое объединение нужно
+    // снять: дисциплина и группа занимают две отдельные строки, а кабинет —
+    // одну вертикально объединённую колонку.
+    copyLessonSlot2Address = async (range, toaddress) => {
+        const targetSheet = this.getTargetSheet()
+        // copyRange2Address исторически воспринимает toaddress как смещение,
+        // поэтому фактическая верхняя левая ячейка находится на строку и
+        // колонку дальше (см. примечание над методом).
+        const start = addressToNumber(toaddress)
+        start.row += 1
+        start.col += 1
+        const end = { row: start.row + 1, col: start.col + 1 }
+
+        for (let row = start.row; row <= end.row; row++) {
+            for (let col = start.col; col <= end.col; col++) {
+                const cell = targetSheet.getRow(row).getCell(col)
+                if (cell.isMerged) targetSheet.unMergeCells(cell.master.address)
+            }
+        }
+
+        await this.copyRange2Address(range, [toaddress], { nomerge: true })
+        targetSheet.mergeCells(start.row, start.col + 1, end.row, start.col + 1)
+    }
+
 
     cleanTargetStyles = async (range)=>{
         const sourcesheet = this.getTargetSheet()
