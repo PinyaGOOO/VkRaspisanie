@@ -1,26 +1,34 @@
 const axios = require("axios")
 const FormData = require("form-data")
 const fs = require("fs")
+const path = require("path")
+const crypto = require("crypto")
 
 const VK_API = "https://api.vk.com/method/"
 const API_VER = "5.199"
 
 class VkBot {
-    constructor(token, groupId) {
+    constructor(token, groupId, options = {}) {
         this.token = token
         this.groupId = groupId
         this._handlers = { message: [], callback: [] }
-        this._errorHandler = (e) => console.error("[VkBot Error]", e)
+        this._errorHandler = (e) => console.error("[VkBot Error]", e?.message || e)
         this._running = false
-        // filePath -> { mtimeMs, attach }. Одни и те же картинки расписания
+        // filePath -> { mtimeMs, hash, attach }. Одни и те же картинки расписания
         // запрашивают сотни пользователей — кэш убирает повторную загрузку в VK.
         this._photoCache = new Map()
-        // VK иногда возвращает успешный HTTP-ответ, но с пустым photo, если
-        // одновременно отправить несколько multipart-загрузок. Очередь общая
-        // для рассылки и пользовательских запросов, поэтому они не мешают друг другу.
-        this._photoUploadQueue = Promise.resolve()
+        this._photoCacheFile = Object.prototype.hasOwnProperty.call(options, "photoCacheFile")
+            ? options.photoCacheFile
+            : path.join(__dirname, "../files/photo-attachments.json")
+        this._photoCacheByHash = this._loadPhotoCache()
+        // Три независимых upload-сервера позволяют не ждать один зависший запрос,
+        // но не создают неограниченный поток загрузок в VK.
+        this._photoUploadConcurrency = options.photoUploadConcurrency || 3
+        this._photoUploadQueue = []
+        this._photoUploadsActive = 0
         this._photoUploadsInFlight = new Map()
         this._photoUploadRetryDelays = [750, 1500, 3000]
+        this._photoCacheStats = { pathHits: 0, contentHits: 0, uploads: 0 }
     }
 
     on(event, handler) { this._handlers[event].push(handler) }
@@ -33,7 +41,16 @@ class VkBot {
             access_token: this.token,
             v: API_VER,
         })
-        const res = await axios.post(url, body, { timeout: 15000 })
+        let res
+        try {
+            res = await axios.post(url, body, { timeout: 15000 })
+        } catch (error) {
+            // Axios Error содержит config.data с access_token. Не пробрасываем
+            // исходный объект, иначе секрет попадёт в systemd journal.
+            const safeError = new Error(`VK API ${method}: ${error.code || error.message}`)
+            safeError.code = error.code
+            throw safeError
+        }
         if (res.data.error) {
             const err = new Error(`VK API Error ${res.data.error.error_code}: ${res.data.error.error_msg}`)
             err.code = res.data.error.error_code
@@ -70,13 +87,56 @@ class VkBot {
         try { return fs.statSync(filePath).mtimeMs } catch (e) { return null }
     }
 
+    _fileHash(filePath) {
+        return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex")
+    }
+
+    _loadPhotoCache() {
+        if (!this._photoCacheFile) return new Map()
+        try {
+            const parsed = JSON.parse(fs.readFileSync(this._photoCacheFile, "utf8"))
+            const entries = Object.entries(parsed?.items || {}).filter(([, item]) =>
+                item && typeof item.attachment === "string" && /^photo-?\d+_\d+$/.test(item.attachment)
+            )
+            return new Map(entries)
+        } catch (error) {
+            if (error.code !== "ENOENT") console.warn("[VkBot] не удалось прочитать кэш фото:", error.message)
+            return new Map()
+        }
+    }
+
+    _savePhotoCache() {
+        if (!this._photoCacheFile) return
+        try {
+            const entries = [...this._photoCacheByHash.entries()]
+                .sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0))
+                .slice(0, 5000)
+            this._photoCacheByHash = new Map(entries)
+            const tempFile = `${this._photoCacheFile}.${process.pid}.tmp`
+            fs.mkdirSync(path.dirname(this._photoCacheFile), { recursive: true })
+            fs.writeFileSync(tempFile, JSON.stringify({ version: 1, items: Object.fromEntries(entries) }))
+            fs.renameSync(tempFile, this._photoCacheFile)
+        } catch (error) {
+            console.warn("[VkBot] не удалось сохранить кэш фото:", error.message)
+        }
+    }
+
+    _rememberPhoto(hash, attachment) {
+        this._photoCacheByHash.set(hash, { attachment, updatedAt: Date.now() })
+        this._savePhotoCache()
+    }
+
+    getPhotoCacheStats() {
+        return { ...this._photoCacheStats, persistentEntries: this._photoCacheByHash.size }
+    }
+
     // Загружает один файл на уже полученный upload-сервер и сохраняет его.
     async _uploadToServer(filePath, uploadUrl) {
         const form = new FormData()
         form.append("photo", fs.createReadStream(filePath))
         const uploadRes = await axios.post(uploadUrl, form, {
             headers: form.getHeaders(),
-            timeout: 30000,
+            timeout: 10000,
         })
         if (!uploadRes.data || !uploadRes.data.photo) {
             throw new Error(`VK не принял фото, ответ: ${JSON.stringify(uploadRes.data)}`)
@@ -90,9 +150,27 @@ class VkBot {
     }
 
     _enqueuePhotoUpload(task) {
-        const result = this._photoUploadQueue.then(task, task)
-        this._photoUploadQueue = result.catch(() => {})
-        return result
+        return new Promise((resolve, reject) => {
+            this._photoUploadQueue.push({ task, resolve, reject })
+            this._drainPhotoUploadQueue()
+        })
+    }
+
+    _drainPhotoUploadQueue() {
+        while (
+            this._photoUploadsActive < this._photoUploadConcurrency &&
+            this._photoUploadQueue.length > 0
+        ) {
+            const { task, resolve, reject } = this._photoUploadQueue.shift()
+            this._photoUploadsActive++
+            Promise.resolve()
+                .then(task)
+                .then(resolve, reject)
+                .finally(() => {
+                    this._photoUploadsActive--
+                    this._drainPhotoUploadQueue()
+                })
+        }
     }
 
     async _uploadWithRetry(filePath) {
@@ -105,7 +183,9 @@ class VkBot {
                     // Свежий URL для каждой попытки: после пустого photo старый
                     // upload-сервер VK повторно использовать ненадёжно.
                     const server = await this.api("photos.getMessagesUploadServer", {})
-                    return await this._uploadToServer(filePath, server.upload_url)
+                    const attachment = await this._uploadToServer(filePath, server.upload_url)
+                    this._photoCacheStats.uploads++
+                    return attachment
                 } catch (error) {
                     lastError = error
                     if (attempt === delays.length) break
@@ -120,8 +200,9 @@ class VkBot {
         })
     }
 
-    // Возвращает attachment-строки для файлов: из кэша (если файл не менялся)
-    // либо ставит недостающие в общую последовательную очередь загрузки.
+    // Возвращает attachment-строки для файлов: сначала по пути/mtime, затем по
+    // SHA-256 содержимого (этот кэш переживает обновления расписания и рестарты),
+    // а недостающие ставит в ограниченную очередь загрузки.
     async _resolveAttachments(filePaths) {
         const results = new Array(filePaths.length)
         const pending = []
@@ -132,13 +213,22 @@ class VkBot {
             const cached = this._photoCache.get(fp)
             if (cached && cached.mtimeMs === mtimeMs) {
                 results[i] = cached.attach
+                this._photoCacheStats.pathHits++
             } else {
-                pending.push({ i, fp, mtimeMs })
+                const hash = this._fileHash(fp)
+                const contentCached = this._photoCacheByHash.get(hash)
+                if (contentCached) {
+                    results[i] = contentCached.attachment
+                    this._photoCache.set(fp, { mtimeMs, hash, attach: contentCached.attachment })
+                    this._photoCacheStats.contentHits++
+                } else {
+                    pending.push({ i, fp, mtimeMs, hash })
+                }
             }
         }
         if (pending.length > 0) {
-            for (const { i, fp, mtimeMs } of pending) {
-                const uploadKey = `${fp}:${mtimeMs}`
+            await Promise.all(pending.map(async ({ i, fp, mtimeMs, hash }) => {
+                const uploadKey = hash
                 let upload = this._photoUploadsInFlight.get(uploadKey)
                 if (!upload) {
                     upload = this._uploadWithRetry(fp)
@@ -146,9 +236,10 @@ class VkBot {
                     upload.finally(() => this._photoUploadsInFlight.delete(uploadKey)).catch(() => {})
                 }
                 const attach = await upload
-                this._photoCache.set(fp, { mtimeMs, attach })
+                this._photoCache.set(fp, { mtimeMs, hash, attach })
+                if (!this._photoCacheByHash.has(hash)) this._rememberPhoto(hash, attach)
                 results[i] = attach
-            }
+            }))
         }
         return results
     }

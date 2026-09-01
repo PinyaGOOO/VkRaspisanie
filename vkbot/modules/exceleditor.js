@@ -481,7 +481,7 @@ module.exports.run = async ()=>{
                             var ceil_offset = index * 2
                             pastepos.col = 3 + ceil_offset
                             pastepos = numberToAddress(pastepos.row, pastepos.col)
-                            await schedule.copyRange2Address([startaddress,endaddress],[pastepos],{unmerge:true})
+                            await schedule.copyLessonSlot2Address([startaddress,endaddress],pastepos)
                             people_cell.master.value = oldname
                             }
                         }

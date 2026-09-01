@@ -67,6 +67,7 @@ function makeRateLimiter(perSecond) {
 // с обычными запросами пользователей.
 async function prepareUnique(uniqueItems, bot) {
     const prepared = new Map() // key -> { attachments, caption } | null
+    const cacheBefore = bot.getPhotoCacheStats ? bot.getPhotoCacheStats() : null
     for (const [key, { category, value }] of uniqueItems) {
         if (storage.get("telegram_stop")) {
             console.log("[delivery] идёт генерация расписания — подготовка прервана")
@@ -93,6 +94,14 @@ async function prepareUnique(uniqueItems, bot) {
                 }
             })
         })
+    }
+    const cacheAfter = bot.getPhotoCacheStats ? bot.getPhotoCacheStats() : null
+    if (cacheBefore && cacheAfter) {
+        console.log(
+            `[delivery] вложения: новых загрузок VK ${cacheAfter.uploads - cacheBefore.uploads}, ` +
+            `из кэша ${cacheAfter.pathHits + cacheAfter.contentHits - cacheBefore.pathHits - cacheBefore.contentHits}, ` +
+            `в постоянном кэше ${cacheAfter.persistentEntries}`
+        )
     }
     return { prepared, aborted: false }
 }

@@ -203,7 +203,7 @@ function startBot() {
     registerCommands()
     bot.on('message', handleMessage)
     bot.on('callback', handleCallback)
-    bot.catch((err) => console.error(err))
+    bot.catch((err) => console.error("[VkBot Error]", err?.message || err))
     bot.start()
     console.log("VK Bot started!")
 }
