@@ -5,6 +5,7 @@ const getimages = require("../../modules/getimagebyname.js")
 const { vk } = require("../../cfg.json")
 const settings = require("../../settings.js")
 const { subscriptionItems } = require("../subscriptions.js")
+const { prepareUnique } = require("./attachmentpreparer.js")
 
 // Настройки рассылки
 const BROADCAST_CONCURRENCY = 12   // сколько сообщений держим "в полёте" одновременно
@@ -62,50 +63,6 @@ function makeRateLimiter(perSecond) {
     }
 }
 
-// Фаза 1: подготовить (сгенерировать + один раз загрузить в VK) каждое УНИКАЛЬНОЕ
-// расписание. Идёт через общую очередь, чтобы не запускать Puppeteer параллельно
-// с обычными запросами пользователей.
-async function prepareUnique(uniqueItems, bot) {
-    const prepared = new Map() // key -> { attachments, caption } | null
-    const cacheBefore = bot.getPhotoCacheStats ? bot.getPhotoCacheStats() : null
-    for (const [key, { category, value }] of uniqueItems) {
-        if (storage.get("telegram_stop")) {
-            console.log("[delivery] идёт генерация расписания — подготовка прервана")
-            return { prepared, aborted: true }
-        }
-        await new Promise((resolve) => {
-            tasker.add({
-                func: async () => {
-                    try {
-                        const images = await getimages(value, "/" + category)
-                        if (images && images.length) {
-                            const attachments = await bot.prepareAttachments(images)
-                            prepared.set(key, { attachments, caption: `Расписание для ${value}` })
-                        } else {
-                            prepared.set(key, null)
-                            console.log(`[delivery] нет картинок для ${key}`)
-                        }
-                    } catch (e) {
-                        prepared.set(key, null)
-                        console.error(`[delivery] ошибка подготовки ${key}:`, e?.message || e)
-                    } finally {
-                        resolve()
-                    }
-                }
-            })
-        })
-    }
-    const cacheAfter = bot.getPhotoCacheStats ? bot.getPhotoCacheStats() : null
-    if (cacheBefore && cacheAfter) {
-        console.log(
-            `[delivery] вложения: новых загрузок VK ${cacheAfter.uploads - cacheBefore.uploads}, ` +
-            `из кэша ${cacheAfter.pathHits + cacheAfter.contentHits - cacheBefore.pathHits - cacheBefore.contentHits}, ` +
-            `в постоянном кэше ${cacheAfter.persistentEntries}`
-        )
-    }
-    return { prepared, aborted: false }
-}
-
 module.exports.start = async () => {
     if (running) {
         console.log("[delivery] рассылка уже идёт — повторный запуск пропущен")
@@ -156,7 +113,13 @@ module.exports.start = async () => {
         }
 
         // Фаза 1 — подготовка картинок (последовательно, защищает Puppeteer)
-        const { prepared, aborted } = await prepareUnique(uniqueItems, bot)
+        const { prepared, aborted } = await prepareUnique({
+            uniqueItems,
+            bot,
+            tasker,
+            getimages,
+            isStopped: () => storage.get("telegram_stop"),
+        })
         if (aborted) {
             throw new Error("подготовка прервана новой генерацией расписания")
         }
