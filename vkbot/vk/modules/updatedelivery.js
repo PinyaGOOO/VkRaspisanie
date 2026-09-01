@@ -4,6 +4,7 @@ const tasker = require("../requestqueue.js")
 const getimages = require("../../modules/getimagebyname.js")
 const { vk } = require("../../cfg.json")
 const settings = require("../../settings.js")
+const { subscriptionItems } = require("../subscriptions.js")
 
 // Настройки рассылки
 const BROADCAST_CONCURRENCY = 12   // сколько сообщений держим "в полёте" одновременно
@@ -131,9 +132,7 @@ module.exports.start = async () => {
                 continue
             }
             const items = []
-            for (const category in subs) {
-                const value = subs[category]
-                if (!value) continue
+            for (const { category, value } of subscriptionItems(subs)) {
                 const key = category + "/" + value
                 items.push({ key })
                 if (!uniqueItems.has(key)) uniqueItems.set(key, { category, value })

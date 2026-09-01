@@ -3,6 +3,7 @@ const db = require("../../database/db.js")
 const getimages = require("../../modules/getimagebyname.js")
 const { vk } = require("../../cfg.json")
 const startcmd = require("../commands/start.js")
+const { subscriptionItems } = require("../subscriptions.js")
 
 module.exports = {
     func: async (ctx) => {
@@ -15,16 +16,16 @@ module.exports = {
         }
         const subsObj = JSON.parse(subs.subscribes)
         let incrementer = 0
-        const total = Object.keys(subsObj).length
-        for (const key in subsObj) {
-            const item_name = subsObj[key]
+        const items = subscriptionItems(subsObj)
+        const total = items.length
+        for (const { category, value: item_name } of items) {
             tasker.add({
                 userid: userID,
                 addbantime: 5,
                 func: async () => {
                     incrementer++
                     try {
-                        const images = await getimages(item_name, "/" + key)
+                        const images = await getimages(item_name, "/" + category)
                         if (!images || images.length === 0) {
                             await ctx.reply(`Нет данных для ${item_name}`)
                         } else {
