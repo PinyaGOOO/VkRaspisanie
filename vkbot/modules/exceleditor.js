@@ -4,6 +4,7 @@ const excel2html = require("./exceltohtml.js")
 const html2image = require("./htmltoimage.js")
 const getimagebyname = require("./getimagebyname.js")
 const excelParser = require("./excelparser.js")
+const { normalizeTeacherName } = require("./teachername.js")
 const storage = require("../helpers/globaldata.js")
 storage.init("telegram_stop")
 storage.set("telegram_stop",true)
@@ -283,9 +284,8 @@ module.exports.run = async ()=>{
             // («Попов С.А.»), которые иначе ловятся как пара и ломают расчёт адреса.
             await schedule.scanRange(["A10",downrightboxpoint],async (row,col)=>{
                 if(col.master == col && col.value){
-                    var value = ""+col.value
-                    const name = value.match(/^([А-яЁё]+\s\W\.\W\.$)/i);
-                    if(name&&name[1]){
+                    const value = normalizeTeacherName(col.value)
+                    if(value){
                         const savepath = "./files/temp/people/"+ value
                         if (!storage.get("people_cache")[value]){
                             storage.get("people_cache")[value] = true
@@ -426,8 +426,8 @@ module.exports.run = async ()=>{
                             var item_row = sourceSheet.getRow(num_address.row+1)
                             var item_cell = item_row.getCell(num_address.col-1)
                             if (item_cell.value){
-                                const name = item_cell.value.match(/^([А-яЁё]+\s\W\.\W\.$)/i);
-                                if(name&&name[1]){
+                                const name = normalizeTeacherName(item_cell.value)
+                                if(name){
                                     if(!rooms_point[value][num_address.row]) rooms_point[value][num_address.row] = []
                                     rooms_point[value][num_address.row].push(num_address.col)
                                 }
