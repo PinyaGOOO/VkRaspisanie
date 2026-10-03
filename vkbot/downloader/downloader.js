@@ -4,6 +4,7 @@ const fs = require("fs")
 const path = require("path")
 const { pipeline } = require("stream/promises")
 const iconv = require("iconv-lite")
+const crypto = require("crypto")
 
 const { vk } = require("../cfg.json")
 const settings = require("../settings.js")
@@ -279,6 +280,28 @@ function publishLatest(data) {
 
 async function getLatest() {
   const sourceUrl = await discoverTopic()
+  const directDocument = parseDocumentLink(sourceUrl)
+  if (directDocument) {
+    const response = await axios.get(sourceUrl, {
+      ...pageRequestConfig,
+      timeout: DOWNLOAD_TIMEOUT_MS,
+    })
+    const content = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data)
+    if (content.length < 2 || content[0] !== 0x50 || content[1] !== 0x4b) {
+      throw new Error("Прямая ссылка VK вернула не XLSX/ZIP; проверьте, что документ доступен")
+    }
+    const digest = crypto.createHash("sha256").update(content).digest("hex")
+    const data = {
+      ...directDocument,
+      postcomment: "",
+      posttime: "Прямая ссылка",
+      postid: `direct_${digest}`,
+      sourceurl: sourceUrl,
+    }
+    publishLatest(data)
+    return data
+  }
+
   const firstResponse = await axios.get(sourceUrl, pageRequestConfig)
   const firstHtml = decodeResponseHtml(firstResponse)
   const postCount = parsePostCount(firstHtml)
